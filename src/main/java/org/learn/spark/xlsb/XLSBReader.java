@@ -1,16 +1,17 @@
 package org.learn.spark.xlsb;
 
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.types.*;
+import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
 public class XLSBReader {
@@ -26,24 +27,18 @@ public class XLSBReader {
 
         // Read the XLSB file using Apache POI
         FileInputStream fis = new FileInputStream(filePath);
-        Workbook workbook = WorkbookFactory.create(fis);
+        Workbook workbook = new SXSSFWorkbook(new XSSFWorkbook(fis));
 
         List<Row> rows = new ArrayList<>();
         StructType schema = null;
 
         for (int i = 0; i < workbook.getNumberOfSheets(); i++) {
             Sheet sheet = workbook.getSheetAt(i);
-            Iterator<org.apache.poi.ss.usermodel.Row> rowIterator = sheet.iterator();
+            int rowIndex = 0;
 
-            // Assume the first row is the header row
-            if (rowIterator.hasNext()) {
-                org.apache.poi.ss.usermodel.Row headerRow = rowIterator.next();
-                schema = createSchema(headerRow);
-            }
-
-            while (rowIterator.hasNext()) {
-                org.apache.poi.ss.usermodel.Row row = rowIterator.next();
+            for (org.apache.poi.ss.usermodel.Row row : sheet) {
                 List<Object> values = new ArrayList<>();
+
                 for (Cell cell : row) {
                     switch (cell.getCellType()) {
                         case STRING:
@@ -66,7 +61,14 @@ public class XLSBReader {
                             values.add(null);
                     }
                 }
-                rows.add(RowFactory.create(values.toArray()));
+
+                // Assume the first row is the header row
+                if (rowIndex == 0) {
+                    schema = createSchema(values);
+                } else {
+                    rows.add(RowFactory.create(values.toArray()));
+                }
+                rowIndex++;
             }
         }
 
@@ -83,10 +85,10 @@ public class XLSBReader {
         spark.stop();
     }
 
-    private static StructType createSchema(org.apache.poi.ss.usermodel.Row headerRow) {
+    private static StructType createSchema(List<Object> headerValues) {
         List<StructField> fields = new ArrayList<>();
-        for (Cell cell : headerRow) {
-            fields.add(DataTypes.createStructField(cell.getStringCellValue(), DataTypes.StringType, true));
+        for (Object headerValue : headerValues) {
+            fields.add(DataTypes.createStructField(headerValue.toString(), DataTypes.StringType, true));
         }
         return DataTypes.createStructType(fields);
     }
